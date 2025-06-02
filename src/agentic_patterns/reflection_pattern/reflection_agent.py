@@ -116,6 +116,7 @@ class ReflectionAgent:
         Returns:
             str: The final generated response after all cycles are completed.
         """
+        print(f"Starting ReflectionAgent.run() with user_msg: {{user_msg}}")
         generation_system_prompt += BASE_GENERATION_SYSTEM_PROMPT
         reflection_system_prompt += BASE_REFLECTION_SYSTEM_PROMPT
 
