@@ -6,6 +6,8 @@ import os
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from http.client import IncompleteRead
+from http.client import RemoteDisconnected
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -240,6 +242,8 @@ class WebAgentTests(unittest.TestCase):
     def test_errors_are_observations_and_do_not_retry_or_fallback(self):
         errors = [
             TimeoutError("timed out"),
+            RemoteDisconnected("server closed connection"),
+            ConnectionResetError("connection reset"),
             URLError("offline"),
             HTTPError(web.ENDPOINT, 429, "quota", {}, None),
             {"isError": True, "content": [{"type": "text", "text": "quota exhausted"}]},
@@ -254,6 +258,63 @@ class WebAgentTests(unittest.TestCase):
                     self.assertEqual(agent.run("Research"), "Unavailable")
                 self.assertIn("Parallel tool error", str(model.messages[-1]))
                 self.assertEqual(len(server.arguments()), 1)
+
+    def test_malformed_tool_content_becomes_an_observation(self):
+        results = [
+            {"content": None},
+            {"content": [{"type": "text"}]},
+            {"content": [{"type": "text", "text": 1}]},
+            {"content": [1]},
+            {"structuredContent": None},
+        ]
+        for result in results:
+            with self.subTest(result=result):
+                agent, model = agent_with_model(
+                    ReactAgent, [call(), "<response>Unavailable</response>"]
+                )
+                server = Server(error=result)
+                with patch.object(web, "urlopen", side_effect=server):
+                    self.assertEqual(agent.run("Research"), "Unavailable")
+                self.assertIn("Parallel tool error", str(model.messages[-1]))
+                self.assertTrue(all(response.closed for response in server.responses))
+
+    def test_structured_content_reaches_the_model(self):
+        agent, model = agent_with_model(
+            ReactAgent, [call(), "<response>Done</response>"]
+        )
+        server = Server(
+            error={
+                "structuredContent": {
+                    "results": [{"url": SOURCE, "excerpts": ["Release notes"]}]
+                }
+            }
+        )
+        with patch.object(web, "urlopen", side_effect=server):
+            self.assertEqual(agent.run("Research"), "Done")
+        self.assertIn(SOURCE, str(model.messages[-1]))
+        self.assertIn("Release notes", str(model.messages[-1]))
+
+    def test_incomplete_response_is_observed_and_closed(self):
+        agent, model = agent_with_model(
+            ReactAgent, [call(), "<response>Unavailable</response>"]
+        )
+        server = Server()
+
+        def broken_read(request, timeout):
+            response = server(request, timeout)
+            if json.loads(request.data)["method"] == "tools/call":
+
+                def read(size):
+                    raise IncompleteRead(b"partial")
+
+                response.read = read
+            return response
+
+        with patch.object(web, "urlopen", side_effect=broken_read):
+            self.assertEqual(agent.run("Research"), "Unavailable")
+        self.assertIn("Parallel tool error", str(model.messages[-1]))
+        self.assertEqual(len(server.arguments()), 1)
+        self.assertTrue(all(response.closed for response in server.responses))
 
     def test_quota_followup_keeps_identity(self):
         agent, _ = agent_with_model(

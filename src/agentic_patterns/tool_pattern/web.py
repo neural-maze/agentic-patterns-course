@@ -2,8 +2,8 @@
 import json
 from contextvars import ContextVar
 from functools import wraps
+from http.client import HTTPException
 from urllib.error import HTTPError
-from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request
 from urllib.request import urlopen
@@ -122,19 +122,28 @@ def _call(name, arguments):
         if result.get("isError"):
             return "Parallel tool error: " + json.dumps(result.get("content", []))
         if "structuredContent" in result:
+            if not isinstance(result["structuredContent"], dict):
+                raise ValueError("Invalid MCP structured content")
             return json.dumps(result["structuredContent"], ensure_ascii=False)
-        text = "\n".join(
-            block["text"]
-            for block in result.get("content", [])
-            if block.get("type") == "text"
-        )
+        content = result.get("content")
+        if not isinstance(content, list) or any(
+            not isinstance(block, dict) for block in content
+        ):
+            raise ValueError("Invalid MCP tool content")
+        texts = []
+        for block in content:
+            if block.get("type") == "text":
+                if not isinstance(block.get("text"), str):
+                    raise ValueError("Invalid MCP text content")
+                texts.append(block["text"])
+        text = "\n".join(texts)
         if not text:
             raise ValueError("MCP tool returned no text")
         return text
     except HTTPError as error:
         error.close()
         return f"Parallel tool error: HTTP {error.code}. No automatic retry."
-    except (URLError, TimeoutError, ValueError) as error:
+    except (OSError, HTTPException, ValueError) as error:
         return f"Parallel tool error: {error}"
 
 
