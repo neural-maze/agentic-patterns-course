@@ -7,6 +7,8 @@ from groq import Groq
 
 from agentic_patterns.tool_pattern.tool import Tool
 from agentic_patterns.tool_pattern.tool import validate_arguments
+from agentic_patterns.tool_pattern.web import resolve_tools
+from agentic_patterns.tool_pattern.web import search_run
 from agentic_patterns.utils.completions import build_prompt_structure
 from agentic_patterns.utils.completions import ChatHistory
 from agentic_patterns.utils.completions import completions_create
@@ -65,20 +67,20 @@ class ReactAgent:
     Attributes:
         client (Groq): The Groq client used to handle model-based completions.
         model (str): The name of the model used for generating responses. Default is "llama-3.3-70b-versatile".
-        tools (list[Tool]): A list of Tool instances available for execution.
+        tools (list[Tool]): Explicit tools, or built-in web tools when omitted.
         tools_dict (dict): A dictionary mapping tool names to their corresponding Tool instances.
     """
 
     def __init__(
         self,
-        tools: Tool | list[Tool],
+        tools: Tool | list[Tool] | None = None,
         model: str = "llama-3.3-70b-versatile",
         system_prompt: str = BASE_SYSTEM_PROMPT,
     ) -> None:
         self.client = Groq()
         self.model = model
         self.system_prompt = system_prompt
-        self.tools = tools if isinstance(tools, list) else [tools]
+        self.tools = resolve_tools(tools)
         self.tools_dict = {tool.name: tool for tool in self.tools}
 
     def add_tool_signatures(self) -> str:
@@ -122,6 +124,7 @@ class ReactAgent:
 
         return observations
 
+    @search_run
     def run(
         self,
         user_msg: str,
@@ -142,15 +145,14 @@ class ReactAgent:
         user_prompt = build_prompt_structure(
             prompt=user_msg, role="user", tag="question"
         )
+        system_prompt = self.system_prompt
         if self.tools:
-            self.system_prompt += (
-                "\n" + REACT_SYSTEM_PROMPT % self.add_tool_signatures()
-            )
+            system_prompt += "\n" + REACT_SYSTEM_PROMPT % self.add_tool_signatures()
 
         chat_history = ChatHistory(
             [
                 build_prompt_structure(
-                    prompt=self.system_prompt,
+                    prompt=system_prompt,
                     role="system",
                 ),
                 user_prompt,
