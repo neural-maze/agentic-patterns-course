@@ -222,6 +222,40 @@ print(final_response)
 
 ### Creating and Using Tools - Tool Use Pattern
 
+`ToolAgent()` and `ReactAgent()` include `web_search` and `web_fetch` when
+`tools` is omitted or `None`. These call [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
+for free web search (Fast mode) and page excerpts, without a Parallel account or
+API key. Your Groq API key is still required for the model.
+
+```python
+from agentic_patterns.planning_pattern.react_agent import ReactAgent
+
+agent = ReactAgent()
+print(agent.run("Find recent Python release notes and summarize the source pages."))
+```
+
+Each `run()` starts a separate conversation; related search and fetch calls within
+it share an opaque session ID. The model can send queries and URLs to Parallel.
+Network requests happen only when a web tool is called, with a 30-second socket
+timeout. Service limits and network errors are returned as tool observations;
+requests are not automatically retried or sent to another provider. Interrupting
+the synchronous call with Ctrl-C propagates to the caller.
+
+Pass `tools=[]` to disable all tools, or pass your existing tool/list to keep
+complete control of what the model can call. Explicit lists are never extended.
+The multiagent `Agent` keeps its existing explicit-tool behavior. To include web
+access alongside custom tools:
+
+```python
+from agentic_patterns.tool_pattern.web import web_search, web_fetch
+
+agent = ReactAgent(tools=[web_search, web_fetch, my_custom_tool])
+```
+
+The built-in tools take simple string arguments: `web_search(query)` and
+`web_fetch(url)`. These wrappers request excerpts from one query or URL at a time.
+
+
 An example of how to create a custom tool and bind it to a Tool Agent.
 
 First, let's create the tool. In this case, I'll be creating a tool for interacting with Hacker News. To define a tool, we just need to decorate the Python function with the `@tool`decorator.

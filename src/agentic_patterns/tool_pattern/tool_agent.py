@@ -7,6 +7,8 @@ from groq import Groq
 
 from agentic_patterns.tool_pattern.tool import Tool
 from agentic_patterns.tool_pattern.tool import validate_arguments
+from agentic_patterns.tool_pattern.web import resolve_tools
+from agentic_patterns.tool_pattern.web import search_run
 from agentic_patterns.utils.completions import build_prompt_structure
 from agentic_patterns.utils.completions import ChatHistory
 from agentic_patterns.utils.completions import completions_create
@@ -42,7 +44,7 @@ class ToolAgent:
     and runs the respective tools.
 
     Attributes:
-        tools (Tool | list[Tool]): A list of tools available to the agent.
+        tools (Tool | list[Tool] | None): Explicit tools, or built-in web tools when omitted.
         model (str): The model to be used for generating tool calls and responses.
         client (Groq): The Groq client used to interact with the language model.
         tools_dict (dict): A dictionary mapping tool names to their corresponding Tool objects.
@@ -50,12 +52,12 @@ class ToolAgent:
 
     def __init__(
         self,
-        tools: Tool | list[Tool],
+        tools: Tool | list[Tool] | None = None,
         model: str = "llama-3.3-70b-versatile",
     ) -> None:
         self.client = Groq()
         self.model = model
-        self.tools = tools if isinstance(tools, list) else [tools]
+        self.tools = resolve_tools(tools)
         self.tools_dict = {tool.name: tool for tool in self.tools}
 
     def add_tool_signatures(self) -> str:
@@ -99,6 +101,7 @@ class ToolAgent:
 
         return observations
 
+    @search_run
     def run(
         self,
         user_msg: str,
